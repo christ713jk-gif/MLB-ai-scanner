@@ -175,6 +175,11 @@ class MLB_ML_Engine_V01:
 app = FastAPI(title="MLB ML Engine API", version="0.1")
 engine = MLB_ML_Engine_V01()
 
+# 🌟 新增：首頁/喚醒專用接口 (GET)
+@app.get("/")
+def home():
+    return {"status": "I am awake!", "engine_version": engine.VERSION}
+
 @app.post("/api/v1/scan")
 def scan_match(data: MatchData):
     """
