@@ -63,35 +63,35 @@ def parse_rl(s: Union[str, float]):
 
 
 # ──────────────────────────────────────────
-# 2. 數據模型 — 欄位名稱對應實際輸入
+# 2. 數據模型 — 欄位名稱完全對齊 JSON 輸入
 # ──────────────────────────────────────────
 
 class SingleMatch(BaseModel):
-    match_str:       str            = Field(...,   alias="Match")
+    match_str:       str               = Field(...,   alias="Match")
 
     # ── ML 賠率 ──────────────────────────
-    ml_open_str:     str            = Field("N/A", alias="ML_Open")
-    ml_close_str:    str            = Field("N/A", alias="ML_Close")
+    ml_open_str:     str               = Field("N/A", alias="ML_Open")
+    ml_close_str:    str               = Field("N/A", alias="ML_Close")
 
-    # ── 跑壘線 (Spread) ──────────────────
-    rl_open_str:     Union[str, float] = Field("N/A", alias="Spread_Open")
-    rl_close_str:    Union[str, float] = Field("N/A", alias="Spread_Close")
+    # ── 跑壘線 (Spread / FG) ──────────────
+    rl_open_str:     Union[str, float] = Field("N/A", alias="FG_Open")
+    rl_close_str:    Union[str, float] = Field("N/A", alias="FG_Close")
 
     # ── 大小分 (Total) ───────────────────
     total_open_str:  Union[str, float] = Field("N/A", alias="Total_Open")
     total_close_str: Union[str, float] = Field("N/A", alias="Total_Close")
 
     # ── Ticket / Money % ─────────────────
-    tkt_ml:      Union[str, float] = Field(50.0, alias="ML_Ticket_Pct")
-    mon_ml:      Union[str, float] = Field(50.0, alias="ML_Money_Pct")
-    tkt_spread:  Union[str, float] = Field(50.0, alias="Spread_Ticket_Pct")
-    mon_spread:  Union[str, float] = Field(50.0, alias="Spread_Money_Pct")
-    tkt_total:   Union[str, float] = Field(50.0, alias="Total_Ticket_Pct")
-    mon_total:   Union[str, float] = Field(50.0, alias="Total_Money_Pct")
+    tkt_ml:          Union[str, float] = Field(50.0, alias="Ticket_ML_G")
+    mon_ml:          Union[str, float] = Field(50.0, alias="Money_ML_G")
+    tkt_spread:      Union[str, float] = Field(50.0, alias="Ticket_Spread_G")
+    mon_spread:      Union[str, float] = Field(50.0, alias="Money_Spread_G")
+    tkt_total:       Union[str, float] = Field(50.0, alias="Ticket_Total_Over")
+    mon_total:       Union[str, float] = Field(50.0, alias="Money_Total_Over")
 
     # ── 其他 ─────────────────────────────
-    has_tbd_pitcher: bool = Field(False, alias="has_tbd_pitcher")
-    daily_dsi:       Optional[float] = Field(None, alias="Daily_DSI")
+    has_tbd_pitcher: bool              = Field(False, alias="has_tbd_pitcher")
+    daily_dsi:       Optional[float]   = Field(None, alias="Daily_DSI")
 
     class Config:
         populate_by_name = True
@@ -233,40 +233,40 @@ def scan_endpoint(input_data: Union[MatchWrapper, List[MatchWrapper]]):
 # ──────────────────────────────────────────
 
 if __name__ == "__main__":
-    # 快速冒煙測試
+    # 快速冒煙測試 (已對齊最新鍵值名稱)
     test_cases = [
         # B1 應觸發
         {"Match": "MIL(客) vs BOS(主)",
          "ML_Open": "1.68 / 1.82", "ML_Close": "1.52 / 1.98",
-         "Spread_Open": "-1.5 (2.05 / 1.48)", "Spread_Close": "-1.5 (1.9 / 1.6)",
+         "FG_Open": "-1.5 (2.05 / 1.48)", "FG_Close": "-1.5 (1.9 / 1.6)",
          "Total_Open": "7.5 (O 1.68 / U 1.82)", "Total_Close": "7.5 (O 1.63 / U 1.87)",
-         "ML_Ticket_Pct": 78, "ML_Money_Pct": 93,
-         "Spread_Ticket_Pct": 87, "Spread_Money_Pct": 79,
-         "Total_Ticket_Pct": 87, "Total_Money_Pct": 86},
+         "Ticket_ML_G": 78, "Money_ML_G": 93,
+         "Ticket_Spread_G": 87, "Money_Spread_G": 79,
+         "Ticket_Total_Over": 87, "Money_Total_Over": 86},
         # B2 應觸發
         {"Match": "MIL(客) vs KC(主)",
          "ML_Open": "1.87 / 1.63", "ML_Close": "1.7 / 1.8",
-         "Spread_Open": "1.5 (1.43 / 2.15)", "Spread_Close": "-1.5 (2.07 / 1.46)",
+         "FG_Open": "1.5 (1.43 / 2.15)", "FG_Close": "-1.5 (2.07 / 1.46)",
          "Total_Open": "8.5 (O 1.82 / U 1.68)", "Total_Close": "8.5 (O 1.82 / U 1.68)",
-         "ML_Ticket_Pct": 21, "ML_Money_Pct": 10,
-         "Spread_Ticket_Pct": 12, "Spread_Money_Pct": 8,
-         "Total_Ticket_Pct": 68, "Total_Money_Pct": 62},
+         "Ticket_ML_G": 21, "Money_ML_G": 10,
+         "Ticket_Spread_G": 12, "Money_Spread_G": 8,
+         "Ticket_Total_Over": 68, "Money_Total_Over": 62},
         # PASS
         {"Match": "TEX(客) vs LAD(主)",
          "ML_Open": "2.9 / 1.23", "ML_Close": "2.85 / 1.25",
-         "Spread_Open": "1.5 (1.92 / 1.58)", "Spread_Close": "1.5 (1.92 / 1.58)",
+         "FG_Open": "1.5 (1.92 / 1.58)", "FG_Close": "1.5 (1.92 / 1.58)",
          "Total_Open": "8.5 (O 1.63 / U 1.87)", "Total_Close": "8.5 (O 1.79 / U 1.71)",
-         "ML_Ticket_Pct": 6, "ML_Money_Pct": 8,
-         "Spread_Ticket_Pct": 7, "Spread_Money_Pct": 2,
-         "Total_Ticket_Pct": 91, "Total_Money_Pct": 88},
+         "Ticket_ML_G": 6, "Money_ML_G": 8,
+         "Ticket_Spread_G": 7, "Money_Spread_G": 2,
+         "Ticket_Total_Over": 91, "Money_Total_Over": 88},
         # TBD 投手
         {"Match": "PHI(客) vs COL(主)", "has_tbd_pitcher": True,
          "ML_Open": "1.28 / 2.7", "ML_Close": "1.26 / 2.75",
-         "Spread_Open": "-1.5 (1.5 / 2)", "Spread_Close": "-1.5 (1.5 / 2)",
+         "FG_Open": "-1.5 (1.5 / 2)", "FG_Close": "-1.5 (1.5 / 2)",
          "Total_Open": "9.5 (O 1.66 / U 1.84)", "Total_Close": "9.5 (O 1.7 / U 1.8)",
-         "ML_Ticket_Pct": 95, "ML_Money_Pct": 94,
-         "Spread_Ticket_Pct": 97, "Spread_Money_Pct": 100,
-         "Total_Ticket_Pct": 81, "Total_Money_Pct": 91},
+         "Ticket_ML_G": 95, "Money_ML_G": 94,
+         "Ticket_Spread_G": 97, "Money_Spread_G": 100,
+         "Ticket_Total_Over": 81, "Money_Total_Over": 91},
     ]
 
     print("MLB Scanner V0.2 — 冒煙測試\n" + "="*60)
