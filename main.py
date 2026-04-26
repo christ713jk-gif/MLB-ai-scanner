@@ -70,8 +70,9 @@ class SingleMatch(BaseModel):
     ml_close_str:    str               = Field("N/A", alias="ML_Close")
 
     # ── 跑壘線 (Spread / FG) ──────────────
-    rl_open_str:     Union[str, float] = Field("N/A", alias="FG_Open")
-    rl_close_str:    Union[str, float] = Field("N/A", alias="FG_Close")
+    # 🌟 直接對齊 Google Sheets 與 n8n 的 Spread_Open / Spread_Close
+    rl_open_str:     Union[str, float] = Field("N/A", alias="Spread_Open")
+    rl_close_str:    Union[str, float] = Field("N/A", alias="Spread_Close")
 
     # ── 大小分 (Total) ───────────────────
     total_open_str:  Union[str, float] = Field("N/A", alias="Total_Open")
