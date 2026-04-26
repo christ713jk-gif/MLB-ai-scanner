@@ -2,9 +2,8 @@ import re
 import os
 import uvicorn
 from typing import Optional, List, Union
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from pydantic import BaseModel, Field
-
 
 # ──────────────────────────────────────────
 # 1. 解析工具
@@ -25,10 +24,9 @@ def parse_pct(val) -> Optional[float]:
         if '%' in str(val) or f > 1.0:
             return f          # 直接當作 0~100
         else:
-            return f * 100.0  # 小數形式 0.74 → 74.0
+            return f * 100.0  # 小數形式 0.74 → 74.0 (完美接住 n8n 的 0.6)
     except:
         return None
-
 
 def parse_ml_odds(s: str):
     """'2.9 / 1.23' → (2.9, 1.23)"""
@@ -39,7 +37,6 @@ def parse_ml_odds(s: str):
         return float(parts[0].strip()), float(parts[1].strip())
     except:
         return None, None
-
 
 def parse_rl(s: Union[str, float]):
     """
@@ -61,9 +58,8 @@ def parse_rl(s: Union[str, float]):
         pass
     return None, None, None
 
-
 # ──────────────────────────────────────────
-# 2. 數據模型 — 欄位名稱完全對齊 JSON 輸入
+# 2. 數據模型 — 欄位名稱完全對齊內部需求
 # ──────────────────────────────────────────
 
 class SingleMatch(BaseModel):
@@ -96,12 +92,6 @@ class SingleMatch(BaseModel):
     class Config:
         populate_by_name = True
 
-
-class MatchWrapper(BaseModel):
-    matches: List[SingleMatch]
-    count:   Optional[int] = 0
-
-
 # ──────────────────────────────────────────
 # 3. 引擎參數（每季回顧）
 # ──────────────────────────────────────────
@@ -110,13 +100,11 @@ FAV_MOVE_B1  = -0.10   # B1: 盤主賠率縮短門檻
 FAV_MON_B1   =  55.0   # B1: 聰明錢押盤主% 門檻 (0~100)
 FAV_MOVE_B2  = -0.05   # B2: RL Flip 搭配的 ML 移動門檻
 
-
 # ──────────────────────────────────────────
 # 4. 單場分析核心
 # ──────────────────────────────────────────
 
 def analyze_match(m: SingleMatch) -> dict:
-
     # ── TBD 投手安全門 ────────────────────
     if m.has_tbd_pitcher:
         return {
@@ -138,8 +126,8 @@ def analyze_match(m: SingleMatch) -> dict:
         }
 
     # ── 確定盤主視角 ──────────────────────
-    raw_tkt_ml = parse_pct(m.tkt_ml)   # 客隊 Ticket%
-    raw_mon_ml = parse_pct(m.mon_ml)   # 客隊 Money%
+    raw_tkt_ml = parse_pct(m.tkt_ml)
+    raw_mon_ml = parse_pct(m.mon_ml)
 
     if gmc <= hmc:
         fav       = 'guest'
@@ -173,20 +161,22 @@ def analyze_match(m: SingleMatch) -> dict:
     # B2: RL-Flip-Confirm（優先）
     if not fired and flip == 1 and fav_move <= FAV_MOVE_B2:
         signals.append({
-            "signal":    "B2-MLB: RL-Flip-Confirm",
-            "direction": f"{new_rl_fav} ML",
-            "train_wr":  "100.0% (N=6)",
-            "maturity":  "[Experimental]",
+            "Type":      "ML",
+            "Target":    f"{new_rl_fav} ML",
+            "Tier":      "Experimental",
+            "Rule":      "B2-MLB: RL-Flip-Confirm",
+            "Expected_WR": "100.0%"
         })
         fired = True
 
     # B1: Fav-Steam
     if not fired and fav_move <= FAV_MOVE_B1 and (fav_mon or 0) >= FAV_MON_B1:
         signals.append({
-            "signal":    "B1-MLB: Fav-Steam",
-            "direction": f"{fav} ML",
-            "train_wr":  "80.0% (N=10)",
-            "maturity":  "[Emerging]",
+            "Type":      "ML",
+            "Target":    f"{fav} ML",
+            "Tier":      "Emerging",
+            "Rule":      "B1-MLB: Fav-Steam",
+            "Expected_WR": "80.0%"
         })
         fired = True
 
@@ -201,82 +191,73 @@ def analyze_match(m: SingleMatch) -> dict:
     )
 
     return {
-        "match":       m.match_str,
-        "status":      "ACTIVE" if signals else "PASS",
+        "Match":       m.match_str,
+        "Status":      "ACTIVE" if signals else "PASS",
         "signals":     signals,
-        "diagnostics": diagnostics,
+        "Diagnostics": diagnostics,
     }
 
-
 # ──────────────────────────────────────────
-# 5. FastAPI 路由
+# 5. FastAPI 路由 (自動正規化攔截器)
 # ──────────────────────────────────────────
 
-app = FastAPI(title="MLB AI Scanner V0.2")
+app = FastAPI(title="MLB AI Scanner V0.2 (Cloud Run Edition)")
 
+def normalize_payload(raw_dict: dict) -> dict:
+    """動態攔截並轉換 n8n 傳來的後綴欄位名稱，讓引擎能讀取"""
+    new_dict = raw_dict.copy()
+    key_mapping = {
+        "Spread_Ticket": "Ticket_Spread_G",
+        "Spread_Money":  "Money_Spread_G",
+        "Total_Ticket":  "Ticket_Total_Over",
+        "Total_Money":   "Money_Total_Over",
+        "ML_Ticket":     "Ticket_ML_G",
+        "ML_Money":      "Money_ML_G"
+    }
+    for k, v in raw_dict.items():
+        for prefix, standard_key in key_mapping.items():
+            if k.startswith(prefix):
+                new_dict[standard_key] = v
+    return new_dict
 
 @app.get("/")
 def home():
-    return {"status": "Online", "version": "MLB-ML-V0.2"}
-
+    return {"status": "Online", "version": "MLB-ML-V0.2 Cloud Run Active"}
 
 @app.post("/scan")
 @app.post("/api/v1/scan")
-def scan_endpoint(input_data: Union[MatchWrapper, List[MatchWrapper]]):
-    data = input_data[0] if isinstance(input_data, list) else input_data
-    results = [analyze_match(m) for m in data.matches]
-    return {"results": results}
+async def scan_endpoint(request: Request):
+    payload = await request.json()
+    
+    # 支援單筆 dict 或多筆 list 陣列
+    raw_list = payload.get("matches", payload) if isinstance(payload, dict) else payload
+    if not isinstance(raw_list, list):
+        raw_list = [raw_list]
 
+    results = []
+    for raw_match in raw_list:
+        normalized_data = normalize_payload(raw_match)
+        try:
+            m = SingleMatch(**normalized_data)
+            results.append(analyze_match(m))
+        except Exception as e:
+            results.append({
+                "Match": raw_match.get("Match", "Unknown"),
+                "Status": "ERROR",
+                "Diagnostics": f"Data parsing error: {str(e)}"
+            })
+
+    # 將輸出格式對齊 n8n 戰報 Code 節點的要求
+    return [{
+        "version": "MLB-Scanner-V0.2",
+        "results": results
+    }]
 
 # ──────────────────────────────────────────
-# 6. 本機測試
+# 6. Cloud Run 啟動設定
 # ──────────────────────────────────────────
 
 if __name__ == "__main__":
-    # 快速冒煙測試 (已對齊最新鍵值名稱)
-    test_cases = [
-        # B1 應觸發
-        {"Match": "MIL(客) vs BOS(主)",
-         "ML_Open": "1.68 / 1.82", "ML_Close": "1.52 / 1.98",
-         "FG_Open": "-1.5 (2.05 / 1.48)", "FG_Close": "-1.5 (1.9 / 1.6)",
-         "Total_Open": "7.5 (O 1.68 / U 1.82)", "Total_Close": "7.5 (O 1.63 / U 1.87)",
-         "Ticket_ML_G": 78, "Money_ML_G": 93,
-         "Ticket_Spread_G": 87, "Money_Spread_G": 79,
-         "Ticket_Total_Over": 87, "Money_Total_Over": 86},
-        # B2 應觸發
-        {"Match": "MIL(客) vs KC(主)",
-         "ML_Open": "1.87 / 1.63", "ML_Close": "1.7 / 1.8",
-         "FG_Open": "1.5 (1.43 / 2.15)", "FG_Close": "-1.5 (2.07 / 1.46)",
-         "Total_Open": "8.5 (O 1.82 / U 1.68)", "Total_Close": "8.5 (O 1.82 / U 1.68)",
-         "Ticket_ML_G": 21, "Money_ML_G": 10,
-         "Ticket_Spread_G": 12, "Money_Spread_G": 8,
-         "Ticket_Total_Over": 68, "Money_Total_Over": 62},
-        # PASS
-        {"Match": "TEX(客) vs LAD(主)",
-         "ML_Open": "2.9 / 1.23", "ML_Close": "2.85 / 1.25",
-         "FG_Open": "1.5 (1.92 / 1.58)", "FG_Close": "1.5 (1.92 / 1.58)",
-         "Total_Open": "8.5 (O 1.63 / U 1.87)", "Total_Close": "8.5 (O 1.79 / U 1.71)",
-         "Ticket_ML_G": 6, "Money_ML_G": 8,
-         "Ticket_Spread_G": 7, "Money_Spread_G": 2,
-         "Ticket_Total_Over": 91, "Money_Total_Over": 88},
-        # TBD 投手
-        {"Match": "PHI(客) vs COL(主)", "has_tbd_pitcher": True,
-         "ML_Open": "1.28 / 2.7", "ML_Close": "1.26 / 2.75",
-         "FG_Open": "-1.5 (1.5 / 2)", "FG_Close": "-1.5 (1.5 / 2)",
-         "Total_Open": "9.5 (O 1.66 / U 1.84)", "Total_Close": "9.5 (O 1.7 / U 1.8)",
-         "Ticket_ML_G": 95, "Money_ML_G": 94,
-         "Ticket_Spread_G": 97, "Money_Spread_G": 100,
-         "Ticket_Total_Over": 81, "Money_Total_Over": 91},
-    ]
-
-    print("MLB Scanner V0.2 — 冒煙測試\n" + "="*60)
-    for tc in test_cases:
-        m = SingleMatch(**tc)
-        r = analyze_match(m)
-        sig = r['signals'][0]['signal'] if r['signals'] else '—'
-        print(f"\n  [{r['status']}] {r['match']}")
-        print(f"  信號: {sig}")
-        print(f"  診斷: {r['diagnostics']}")
-
-    port = int(os.environ.get("PORT", 8000))
+    # 將 Port 修改為 Cloud Run 預設的 8080
+    port = int(os.environ.get("PORT", 8080))
     uvicorn.run(app, host="0.0.0.0", port=port)
